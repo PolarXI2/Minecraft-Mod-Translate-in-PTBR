@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,79 +13,80 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace ModernModTranslator
 {
     public partial class MainWindow : Window
     {
-        // --- DEĞİŞKENLER ---
-        private string secilenYol = "";
-        private bool isBatchMode = false;
-        private string hedefDilKodu = "tr";
-        private bool iptal = false;
+        // --- VARIÁVEIS ---
+        private string caminhoSelecionado = "";
+        private bool modoPacote = false;
+        private string codigoIdiomaDestino = "pt";
+        private bool interromper = false;
 
-        // --- AYARLAR ---
-        private const int MOD_ARASI_BEKLEME = 1500;
-        private const int PAKET_ARASI_BEKLEME = 300;
-        private const int BATCH_SIZE = 30;
+        // --- CONFIGURAÇÕES DE VELOCIDADE (Para evitar BAN de IP) ---
+        private const int ESPERA_ENTRE_MODS = 1500;
+        private const int ESPERA_ENTRE_PACOTES = 300;
+        private const int TAMANHO_LOTE = 30;
 
         public MainWindow()
         {
             InitializeComponent();
         }
 
-        // --- PENCERE ---
+        // --- CONTROLES DA JANELA ---
         private void TopBar_MouseDown(object sender, MouseButtonEventArgs e) { if (e.ChangedButton == MouseButton.Left) this.DragMove(); }
-        private void BtnClose_Click(object sender, RoutedEventArgs e) { iptal = true; Application.Current.Shutdown(); }
+        private void BtnClose_Click(object sender, RoutedEventArgs e) { interromper = true; Application.Current.Shutdown(); }
         private void BtnMinimize_Click(object sender, RoutedEventArgs e) => this.WindowState = WindowState.Minimized;
 
-        // --- MOD SEÇİMİ ---
+        // --- SELEÇÃO DE MODO (ÚNICO OU PACOTE) ---
         private void CmbMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (btnSec == null || pnlTotalProgress == null || txtInfo == null) return;
 
-            isBatchMode = cmbMode.SelectedIndex == 1;
+            modoPacote = cmbMode.SelectedIndex == 1;
 
-            if (isBatchMode)
+            if (modoPacote)
             {
-                btnSec.Content = "MODS KLASÖRÜ SEÇ";
+                btnSec.Content = "SELECIONAR PASTA MODS";
                 pnlTotalProgress.Visibility = Visibility.Visible;
                 txtInfo.Text = "";
             }
             else
             {
-                btnSec.Content = "MOD DOSYASI SEÇ";
+                btnSec.Content = "SELECIONAR ARQUIVO MOD";
                 pnlTotalProgress.Visibility = Visibility.Collapsed;
                 txtInfo.Text = "";
             }
-            secilenYol = "";
-            if (txtYol != null) txtYol.Text = "Seçim bekleniyor...";
+            caminhoSelecionado = "";
+            if (txtYol != null) txtYol.Text = "Aguardando seleção...";
             if (btnBaslat != null) btnBaslat.IsEnabled = false;
         }
 
-        // --- DOSYA/KLASÖR SEÇ ---
+        // --- SELECIONAR ARQUIVO OU PASTA ---
         private void BtnSec_Click(object sender, RoutedEventArgs e)
         {
             OpenFileDialog ofd = new OpenFileDialog();
-            ofd.Filter = "Minecraft Modu|*.jar";
-            ofd.Title = isBatchMode ? "Klasör algılamak için İÇERİDEN BİR MOD seçin" : "Mod Dosyasını Seçin";
+            ofd.Filter = "Mod de Minecraft|*.jar";
+            ofd.Title = modoPacote ? "Selecione QUALQUER MOD dentro da sua pasta 'mods'" : "Selecione o arquivo .jar do Mod";
 
             if (ofd.ShowDialog() == true)
             {
-                if (isBatchMode)
+                if (modoPacote)
                 {
-                    secilenYol = System.IO.Path.GetDirectoryName(ofd.FileName);
-                    int sayi = Directory.GetFiles(secilenYol, "*.jar").Length;
-                    txtYol.Text = secilenYol;
-                    txtInfo.Text = $"{sayi} Mod Bulundu";
-                    LogEkle($"Klasör: {secilenYol} ({sayi} dosya)");
+                    caminhoSelecionado = System.IO.Path.GetDirectoryName(ofd.FileName);
+                    int quantidade = Directory.GetFiles(caminhoSelecionado, "*.jar").Length;
+                    txtYol.Text = caminhoSelecionado;
+                    txtInfo.Text = $"{quantidade} Mods Encontrados";
+                    AdicionarLog($"Pasta: {caminhoSelecionado} ({quantidade} arquivos)");
                 }
                 else
                 {
-                    secilenYol = ofd.FileName;
-                    txtYol.Text = System.IO.Path.GetFileName(secilenYol);
-                    txtInfo.Text = "Tek Dosya";
-                    LogEkle($"Dosya: {txtYol.Text}");
+                    caminhoSelecionado = ofd.FileName;
+                    txtYol.Text = System.IO.Path.GetFileName(caminhoSelecionado);
+                    txtInfo.Text = "Mod Único";
+                    AdicionarLog($"Arquivo: {txtYol.Text}");
                 }
                 txtYol.Foreground = (Brush)FindResource("AccentColor");
                 txtYol.FontStyle = FontStyles.Normal;
@@ -96,21 +97,21 @@ namespace ModernModTranslator
             }
         }
 
-        private void LogEkle(string mesaj)
+        private void AdicionarLog(string mensagem)
         {
-            txtLog.Text += $"\n[{DateTime.Now:HH:mm:ss}] {mesaj}";
+            txtLog.Text += $"\n[{DateTime.Now:HH:mm:ss}] {mensagem}";
             scrlLog.ScrollToBottom();
         }
 
-        // --- BAŞLAT ---
+        // --- BOTÃO INICIAR ---
         private async void BtnBaslat_Click(object sender, RoutedEventArgs e)
         {
-            var selectedItem = (ComboBoxItem)cmbLanguage.SelectedItem;
-            hedefDilKodu = selectedItem.Tag.ToString();
+            var itemSelecionado = (ComboBoxItem)cmbLanguage.SelectedItem;
+            codigoIdiomaDestino = itemSelecionado.Tag.ToString();
 
             btnBaslat.IsEnabled = false; btnSec.IsEnabled = false;
             cmbMode.IsEnabled = false; cmbLanguage.IsEnabled = false;
-            iptal = false;
+            interromper = false;
 
             using (HttpClient client = new HttpClient())
             {
@@ -118,244 +119,245 @@ namespace ModernModTranslator
 
                 try
                 {
-                    if (isBatchMode) await ModPaketiIsle(client);
-                    else await TekModIsle(client, secilenYol);
+                    if (modoPacote) await ProcessarPacoteMods(client);
+                    else await ProcessarModUnico(client, caminhoSelecionado);
 
-                    LogEkle("🏁 İŞLEMLER TAMAMLANDI.");
-                    MessageBox.Show("İşlem Başarılı!", "Bitti", MessageBoxButton.OK, MessageBoxImage.Information);
+                    AdicionarLog("🏁 PROCESSAMENTO CONCLUÍDO COM SUCESSO.");
+                    MessageBox.Show("A tradução foi concluída!", "Sucesso", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
-                catch (Exception ex) { LogEkle($"HATA: {ex.Message}"); }
+                catch (Exception ex) { AdicionarLog($"ERRO CRÍTICO: {ex.Message}"); }
             }
 
             btnBaslat.IsEnabled = true; btnSec.IsEnabled = true;
             cmbMode.IsEnabled = true; cmbLanguage.IsEnabled = true;
         }
 
-        private async Task TekModIsle(HttpClient client, string dosyaYolu)
+        private async Task ProcessarModUnico(HttpClient client, string caminhoArquivo)
         {
-            txtCurrentStatus.Text = $"İşleniyor: {System.IO.Path.GetFileName(dosyaYolu)}";
-            bool sonuc = await ModCevir(dosyaYolu, client);
-            if (sonuc) LogEkle("✅ Tamamlandı.");
-            else LogEkle("⚠️ Dil dosyası yok.");
+            txtCurrentStatus.Text = $"Traduzindo: {System.IO.Path.GetFileName(caminhoArquivo)}";
+            bool resultado = await TraduzirMod(caminhoArquivo, client);
+            if (resultado) AdicionarLog("✅ Concluído.");
+            else AdicionarLog("⚠️ Sem arquivos de idioma (en_us) para traduzir.");
             progCurrent.Value = 100; txtCurrentYuzde.Text = "%100";
         }
 
-        private async Task ModPaketiIsle(HttpClient client)
+        private async Task ProcessarPacoteMods(HttpClient client)
         {
-            string[] dosyalar = Directory.GetFiles(secilenYol, "*.jar");
-            int toplam = dosyalar.Length;
-            progTotal.Maximum = toplam;
+            string[] arquivos = Directory.GetFiles(caminhoSelecionado, "*.jar");
+            int total = arquivos.Length;
+            progTotal.Maximum = total;
 
-            LogEkle($"=== {toplam} MOD İŞLENECEK ===");
+            AdicionarLog($"=== INICIANDO TRADUÇÃO DE {total} MODS ===");
 
-            for (int i = 0; i < toplam; i++)
+            for (int i = 0; i < total; i++)
             {
-                if (iptal) { LogEkle("⛔ İptal edildi."); break; }
+                if (interromper) { AdicionarLog("⛔ Operação cancelada pelo usuário."); break; }
 
-                string dosya = dosyalar[i];
-                string ad = System.IO.Path.GetFileName(dosya);
+                string arquivo = arquivos[i];
+                string nome = System.IO.Path.GetFileName(arquivo);
 
-                txtTotalYuzde.Text = $"{i + 1} / {toplam}";
+                txtTotalYuzde.Text = $"{i + 1} / {total}";
                 progTotal.Value = i + 1;
-                txtCurrentStatus.Text = $"[{i + 1}/{toplam}] {ad}";
-                LogEkle($"Mod: {ad}...");
+                txtCurrentStatus.Text = $"[{i + 1}/{total}] {nome}";
+                AdicionarLog($"Processando: {nome}...");
 
                 try
                 {
-                    bool sonuc = await ModCevir(dosya, client);
-                    if (!sonuc) LogEkle($"⏩ Atlandı.");
+                    bool resultado = await TraduzirMod(arquivo, client);
+                    if (!resultado) AdicionarLog($"⏩ Ignorado (Idiomas não encontrados).");
                 }
-                catch (Exception ex) { LogEkle($"❌ Hata: {ex.Message}"); }
+                catch (Exception ex) { AdicionarLog($"❌ Erro no mod {nome}: {ex.Message}"); }
 
-                await Task.Delay(MOD_ARASI_BEKLEME);
+                await Task.Delay(ESPERA_ENTRE_MODS);
             }
         }
 
-        // --- ÇEVİRİ MOTORU (DÜZELTİLEN KISIM) ---
-        private async Task<bool> ModCevir(string jarYolu, HttpClient client)
+        // --- MOTOR DE TRADUÇÃO ---
+        private async Task<bool> TraduzirMod(string caminhoJar, HttpClient client)
         {
-            byte[] fileBytes;
-            try { fileBytes = await File.ReadAllBytesAsync(jarYolu); } catch { return false; }
+            byte[] bytesArquivo;
+            try { bytesArquivo = await File.ReadAllBytesAsync(caminhoJar); } catch { return false; }
 
-            // [DÜZELTME BURADA] 
-            // Fixed-size (sabit boyutlu) stream yerine Expandable (genişleyebilir) stream kullanıyoruz.
             using (MemoryStream ms = new MemoryStream())
             {
-                // Veriyi akışa yaz
-                await ms.WriteAsync(fileBytes, 0, fileBytes.Length);
-                ms.Position = 0; // Başa sar
+                await ms.WriteAsync(bytesArquivo, 0, bytesArquivo.Length);
+                ms.Position = 0;
 
-                using (ZipArchive archive = new ZipArchive(ms, ZipArchiveMode.Update, true)) // 'true' leaveOpen demektir
+                using (ZipArchive archive = new ZipArchive(ms, ZipArchiveMode.Update, true))
                 {
-                    ZipArchiveEntry dilDosyasi = null;
-                    string assetsPath = "";
-                    bool isJson = true;
+                    ZipArchiveEntry arquivoIdioma = null;
+                    string caminhoAssets = "";
+                    bool ehJson = true;
 
-                    // 1. Dosya Bul
+                    // 1. Localizar arquivo de origem (en_us)
                     foreach (var entry in archive.Entries)
                     {
                         if (entry.FullName.EndsWith("en_us.json", StringComparison.OrdinalIgnoreCase))
                         {
-                            dilDosyasi = entry; assetsPath = System.IO.Path.GetDirectoryName(entry.FullName).Replace("\\", "/");
-                            isJson = true; break;
+                            arquivoIdioma = entry; 
+                            caminhoAssets = System.IO.Path.GetDirectoryName(entry.FullName).Replace("\\", "/");
+                            ehJson = true; break;
                         }
                     }
-                    if (dilDosyasi == null)
+                    if (arquivoIdioma == null)
                     {
                         foreach (var entry in archive.Entries)
                         {
                             if (entry.FullName.EndsWith("en_us.lang", StringComparison.OrdinalIgnoreCase) ||
                                 entry.FullName.EndsWith("en_US.lang", StringComparison.OrdinalIgnoreCase))
                             {
-                                dilDosyasi = entry; assetsPath = System.IO.Path.GetDirectoryName(entry.FullName).Replace("\\", "/");
-                                isJson = false; break;
+                                arquivoIdioma = entry; 
+                                caminhoAssets = System.IO.Path.GetDirectoryName(entry.FullName).Replace("\\", "/");
+                                ehJson = false; break;
                             }
                         }
                     }
 
-                    if (dilDosyasi == null) return false;
+                    if (arquivoIdioma == null) return false;
 
-                    // 2. Oku
-                    Dictionary<string, string> ceviriSozlugu = new Dictionary<string, string>();
-                    using (StreamReader reader = new StreamReader(dilDosyasi.Open()))
+                    // 2. Ler conteúdo original
+                    Dictionary<string, string> dicionarioOriginal = new Dictionary<string, string>();
+                    using (StreamReader reader = new StreamReader(arquivoIdioma.Open()))
                     {
-                        string content = await reader.ReadToEndAsync();
-                        if (isJson)
+                        string conteudo = await reader.ReadToEndAsync();
+                        if (ehJson)
                         {
                             var options = new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip };
-                            try { ceviriSozlugu = JsonSerializer.Deserialize<Dictionary<string, string>>(content, options); } catch { return false; }
+                            try { dicionarioOriginal = JsonSerializer.Deserialize<Dictionary<string, string>>(conteudo, options); } catch { return false; }
                         }
-                        else { ceviriSozlugu = ParseLangFile(content); }
+                        else { dicionarioOriginal = TraduzirArquivoLang(conteudo); }
                     }
 
-                    if (ceviriSozlugu == null || ceviriSozlugu.Count == 0) return false;
+                    if (dicionarioOriginal == null || dicionarioOriginal.Count == 0) return false;
 
-                    // 3. Filtrele
-                    List<string> anahtarlar = new List<string>();
-                    List<string> degerler = new List<string>();
-                    Dictionary<string, string> yeniSozluk = new Dictionary<string, string>();
+                    // 3. Filtrar textos válidos
+                    List<string> chavesParaTraduzir = new List<string>();
+                    List<string> valoresParaTraduzir = new List<string>();
+                    Dictionary<string, string> novoDicionario = new Dictionary<string, string>();
 
-                    foreach (var item in ceviriSozlugu)
+                    foreach (var item in dicionarioOriginal)
                     {
+                        // Ignora textos vazios ou variáveis complexas
                         if (string.IsNullOrWhiteSpace(item.Value) || item.Value.Length < 2 || (item.Value.Contains("{") && item.Value.Contains("}")))
-                            yeniSozluk[item.Key] = item.Value;
+                            novoDicionario[item.Key] = item.Value;
                         else
                         {
-                            anahtarlar.Add(item.Key); degerler.Add(item.Value);
+                            chavesParaTraduzir.Add(item.Key); 
+                            valoresParaTraduzir.Add(item.Value);
                         }
                     }
 
-                    // 4. Batch Çeviri
-                    int total = anahtarlar.Count;
-                    if (total > 0)
+                    // 4. Tradução em Lote (Batch)
+                    int totalStrings = chavesParaTraduzir.Count;
+                    if (totalStrings > 0)
                     {
-                        List<string> batchKeys = new List<string>();
-                        List<string> batchValues = new List<string>();
-                        int currentLen = 0;
+                        List<string> loteChaves = new List<string>();
+                        List<string> loteValores = new List<string>();
+                        int tamanhoAtual = 0;
 
-                        for (int i = 0; i < total; i++)
+                        for (int i = 0; i < totalStrings; i++)
                         {
-                            string k = anahtarlar[i]; string v = degerler[i];
+                            string k = chavesParaTraduzir[i]; 
+                            string v = valoresParaTraduzir[i];
                             int len = v.Length + 5;
 
-                            if (batchValues.Count > 0 && (currentLen + len > 1600 || batchValues.Count >= BATCH_SIZE))
+                            if (loteValores.Count > 0 && (tamanhoAtual + len > 1600 || loteValores.Count >= TAMANHO_LOTE))
                             {
-                                await ProcessBatch(client, batchKeys, batchValues, yeniSozluk);
+                                await ProcessarLoteTraducao(client, loteChaves, loteValores, novoDicionario);
 
-                                if (!isBatchMode)
+                                if (!modoPacote)
                                 {
                                     Application.Current.Dispatcher.Invoke(() => {
-                                        progCurrent.Value = ((double)i / total) * 100;
+                                        progCurrent.Value = ((double)i / totalStrings) * 100;
                                         txtCurrentYuzde.Text = $"%{progCurrent.Value:0}";
                                     });
                                 }
-                                batchKeys.Clear(); batchValues.Clear(); currentLen = 0;
-                                await Task.Delay(PAKET_ARASI_BEKLEME);
+                                loteChaves.Clear(); loteValores.Clear(); tamanhoAtual = 0;
+                                await Task.Delay(ESPERA_ENTRE_PACOTES);
                             }
-                            batchKeys.Add(k); batchValues.Add(v); currentLen += len;
+                            loteChaves.Add(k); loteValores.Add(v); tamanhoAtual += len;
                         }
-                        if (batchValues.Count > 0) await ProcessBatch(client, batchKeys, batchValues, yeniSozluk);
+                        if (loteValores.Count > 0) await ProcessarLoteTraducao(client, loteChaves, loteValores, novoDicionario);
                     }
 
-                    // 5. Kaydet
-                    string hedefDosyaAdi = HedefDosyaAdiBelirle(hedefDilKodu, isJson);
-                    string yeniYol = assetsPath + "/" + hedefDosyaAdi;
-                    string yazilacakIcerik = "";
+                    // 5. Salvar tradução no arquivo
+                    string nomeArquivoDestino = DefinirNomeArquivoDestino(codigoIdiomaDestino, ehJson);
+                    string caminhoFinal = caminhoAssets + "/" + nomeArquivoDestino;
+                    string conteudoFinal = "";
 
-                    if (isJson)
+                    if (ehJson)
                     {
                         var writeOptions = new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-                        yazilacakIcerik = JsonSerializer.Serialize(yeniSozluk, writeOptions);
+                        conteudoFinal = JsonSerializer.Serialize(novoDicionario, writeOptions);
                     }
                     else
                     {
                         StringBuilder sb = new StringBuilder();
-                        foreach (var kvp in yeniSozluk) sb.AppendLine($"{kvp.Key}={kvp.Value}");
-                        yazilacakIcerik = sb.ToString();
+                        foreach (var kvp in novoDicionario) sb.AppendLine($"{kvp.Key}={kvp.Value}");
+                        conteudoFinal = sb.ToString();
                     }
 
-                    var eski = archive.GetEntry(yeniYol);
-                    if (eski != null) eski.Delete();
+                    var entradaAntiga = archive.GetEntry(caminhoFinal);
+                    if (entradaAntiga != null) entradaAntiga.Delete();
 
-                    var yeni = archive.CreateEntry(yeniYol);
-                    using (StreamWriter writer = new StreamWriter(yeni.Open())) { await writer.WriteAsync(yazilacakIcerik); }
+                    var novaEntrada = archive.CreateEntry(caminhoFinal);
+                    using (StreamWriter writer = new StreamWriter(novaEntrada.Open())) { await writer.WriteAsync(conteudoFinal); }
                 }
 
-                // Zip Arşivi kapandı, şimdi genişlemiş memory stream'i diske yazalım
-                await File.WriteAllBytesAsync(jarYolu, ms.ToArray());
+                await File.WriteAllBytesAsync(caminhoJar, ms.ToArray());
             }
 
             return true;
         }
 
-        // --- PARSERS & API ---
-        private Dictionary<string, string> ParseLangFile(string content)
+        // --- UTILITÁRIOS E API ---
+        private Dictionary<string, string> TraduzirArquivoLang(string conteudo)
         {
-            var dict = new Dictionary<string, string>();
-            using (StringReader sr = new StringReader(content))
+            var dicionario = new Dictionary<string, string>();
+            using (StringReader sr = new StringReader(conteudo))
             {
-                string line;
-                while ((line = sr.ReadLine()) != null)
+                string linha;
+                while ((linha = sr.ReadLine()) != null)
                 {
-                    if (line.Trim().StartsWith("#") || string.IsNullOrWhiteSpace(line)) continue;
-                    int index = line.IndexOf('=');
-                    if (index > 0)
+                    if (linha.Trim().StartsWith("#") || string.IsNullOrWhiteSpace(linha)) continue;
+                    int indice = linha.IndexOf('=');
+                    if (indice > 0)
                     {
-                        string key = line.Substring(0, index).Trim();
-                        string val = line.Substring(index + 1).Trim();
-                        if (!dict.ContainsKey(key)) dict.Add(key, val);
+                        string chave = linha.Substring(0, indice).Trim();
+                        string valor = linha.Substring(indice + 1).Trim();
+                        if (!dicionario.ContainsKey(chave)) dicionario.Add(chave, valor);
                     }
                 }
             }
-            return dict;
+            return dicionario;
         }
 
-        private async Task ProcessBatch(HttpClient client, List<string> keys, List<string> values, Dictionary<string, string> dict)
+        private async Task ProcessarLoteTraducao(HttpClient client, List<string> chaves, List<string> valores, Dictionary<string, string> dicionario)
         {
-            List<string> results = await TranslateApi(client, values);
-            if (results.Count != values.Count)
+            List<string> resultados = await ChamarApiTraducao(client, valores);
+            if (resultados.Count != valores.Count)
             {
-                for (int j = 0; j < keys.Count; j++)
+                for (int j = 0; j < chaves.Count; j++)
                 {
-                    dict[keys[j]] = await TranslateSingle(client, values[j]);
+                    dicionario[chaves[j]] = await TraduzirTextoUnico(client, valores[j]);
                     await Task.Delay(150);
                 }
             }
             else
             {
-                for (int j = 0; j < keys.Count; j++) dict[keys[j]] = results[j];
+                for (int j = 0; j < chaves.Count; j++) dicionario[chaves[j]] = resultados[j];
             }
         }
 
-        private async Task<List<string>> TranslateApi(HttpClient client, List<string> texts)
+        private async Task<List<string>> ChamarApiTraducao(HttpClient client, List<string> textos)
         {
             try
             {
-                string combined = string.Join("\n", texts);
-                string url = $"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={hedefDilKodu}&dt=t&q={Uri.EscapeDataString(combined)}";
-                string res = await client.GetStringAsync(url);
-                List<string> list = new List<string>();
-                using (JsonDocument doc = JsonDocument.Parse(res))
+                string combinado = string.Join("\n", textos);
+                string url = $"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={codigoIdiomaDestino}&dt=t&q={Uri.EscapeDataString(combinado)}";
+                string resposta = await client.GetStringAsync(url);
+                List<string> lista = new List<string>();
+                using (JsonDocument doc = JsonDocument.Parse(resposta))
                 {
                     var root = doc.RootElement;
                     if (root.ValueKind == JsonValueKind.Array)
@@ -365,45 +367,49 @@ namespace ModernModTranslator
                             if (s.ValueKind == JsonValueKind.Array)
                             {
                                 string t = s[0].GetString();
-                                if (!string.IsNullOrEmpty(t)) list.Add(CleanText(t));
+                                if (!string.IsNullOrEmpty(t)) lista.Add(LimparTexto(t));
                             }
                         }
                     }
                 }
-                return list;
+                return lista;
             }
             catch { return new List<string>(); }
         }
 
-        private async Task<string> TranslateSingle(HttpClient client, string text)
+        private async Task<string> TraduzirTextoUnico(HttpClient client, string texto)
         {
             try
             {
-                string url = $"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={hedefDilKodu}&dt=t&q={Uri.EscapeDataString(text)}";
-                string res = await client.GetStringAsync(url);
-                using (JsonDocument doc = JsonDocument.Parse(res))
-                    return CleanText(doc.RootElement[0][0][0].GetString());
+                string url = $"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={codigoIdiomaDestino}&dt=t&q={Uri.EscapeDataString(texto)}";
+                string resposta = await client.GetStringAsync(url);
+                using (JsonDocument doc = JsonDocument.Parse(resposta))
+                    return LimparTexto(doc.RootElement[0][0][0].GetString());
             }
-            catch { return text; }
+            catch { return texto; }
         }
 
-        private string CleanText(string t)
+        private string LimparTexto(string t)
         {
-            return t.Trim().Replace("% s", " %s").Replace("% d", " %d").Replace("§ ", "§");
+            // Protege variáveis do Minecraft contra erros de tradução
+            return t.Trim()
+                .Replace("% s", " %s")
+                .Replace("% d", " %d")
+                .Replace("§ ", "§")
+                .Replace("& ", "§");
         }
 
-        private string HedefDosyaAdiBelirle(string kod, bool isJson)
+        private string DefinirNomeArquivoDestino(string codigo, bool ehJson)
         {
-            string ext = isJson ? "json" : "lang";
-            if (!isJson && kod == "tr") return "tr_TR.lang";
+            string extensao = ehJson ? "json" : "lang";
+            if (!ehJson && codigo == "pt") return "pt_BR.lang";
 
-            switch (kod)
+            switch (codigo)
             {
-                case "tr": return $"tr_tr.{ext}";
-                case "en": return $"en_us.{ext}";
-                case "de": return $"de_de.{ext}";
-                case "fr": return $"fr_fr.{ext}";
-                default: return $"{kod}_{kod}.{ext}";
+                case "pt": return $"pt_br.{extensao}";
+                case "en": return $"en_us.{extensao}";
+                case "tr": return $"tr_tr.{extensao}";
+                default: return $"{codigo}_{codigo}.{extensao}";
             }
         }
     }
